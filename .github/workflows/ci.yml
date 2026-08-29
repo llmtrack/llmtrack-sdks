@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: npm install
+      - run: npx @redocly/cli@1.34.5 lint spec/openapi.yaml
+      - run: npm run generate
+      - run: npm --prefix packages/node install
+      - run: npm --prefix packages/node run build
+      - run: npm --prefix packages/node test
+      - run: pip install build '.[test]'
+        working-directory: packages/python
+      - run: python -m build packages/python && pytest packages/python/tests

@@ -1,0 +1,479 @@
+openapi: 3.1.0
+info:
+  title: LLMtrack Ingest API
+  version: 1.0.0
+  description: >-
+    Public API for recording one LLM request. LLMtrack computes cost on the server;
+    any client-supplied `cost` property is ignored. Free-plan ingestion keys are
+    bound to a provider/model/feature triple. An event that does not match that
+    binding is still accepted and consumes quota or credits, but is hidden from
+    the dashboard (`dashboard_visible: false` and
+    `visibility_reason: free_source_mismatch`); this is not an error.
+servers:
+  - url: https://llm-track.com
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+paths:
+  /api/ingest:
+    post:
+      operationId: ingestLlmRequest
+      summary: Record an LLM request
+      description: >-
+        Authenticates an ingestion key, checks workspace billing and event
+        allowance, stores the event, and computes its cost from active server-side
+        pricing. Either authentication scheme is accepted. A non-empty Bearer
+        credential takes precedence if both headers are supplied. `pricing_status:
+        unknown_model` means that no active pricing row matched the submitted
+        provider and model, so cost is 0; it is distinct from a genuine zero cost
+        calculated from a pricing row. A newly stored event and an idempotent
+        replay both return HTTP 200 and are distinguished by the `duplicate`
+        property.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: >-
+            Optional idempotency key scoped to the workspace. A repeat of a stored
+            key returns the 200 duplicate response without consuming quota or
+            credits and without creating another event.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+            example:
+              provider: openai
+              model: gpt-4o-mini
+              prompt_tokens: 1250
+              completion_tokens: 320
+              reasoning_tokens: 80
+              latency_ms: 842
+              status: success
+              feature: support-chat
+              customer_id: cust_123
+              environment: production
+              metadata:
+                trace_id: trace_abc
+      responses:
+        '200':
+          description: >-
+            The event was stored, or its idempotency key was already stored. A
+            replay consumes no quota or credits. Inspect `duplicate` to
+            distinguish the two cases.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/IngestSuccess'
+                  - $ref: '#/components/schemas/DuplicateResponse'
+              examples:
+                success:
+                  summary: Event accepted and stored
+                  value:
+                    ok: true
+                    duplicate: false
+                    id: 9ea0c2ec-7b98-4bc3-9802-20ae6a468a35
+                    cost: 0.000231
+                    consumption_source: included
+                    dashboard_visible: true
+                    visibility_reason: null
+                    visibility_context: null
+                    pricing_status: ok
+                duplicate:
+                  summary: Idempotent replay
+                  value:
+                    ok: true
+                    duplicate: true
+        '400':
+          description: The JSON body or one of its fields is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidPayloadResponse'
+              example:
+                error: Invalid payload
+                code: INVALID_PAYLOAD
+                field: prompt_tokens
+        '401':
+          description: Authentication failed or the key's workspace does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+              examples:
+                missing:
+                  summary: No usable credential supplied
+                  value: { error: Missing API key }
+                invalid:
+                  summary: Key not found (key lookup errors use this response too)
+                  value: { error: Invalid API key }
+                revoked:
+                  summary: Key has been revoked
+                  value: { error: Revoked API key }
+                inactive:
+                  summary: Key has been deactivated
+                  value: { error: Inactive API key }
+                invalidWorkspace:
+                  summary: The key refers to a workspace that does not exist
+                  value: { error: Invalid workspace for API key }
+        '402':
+          description: >-
+            The free-plan lifetime event cap was reached, a paid plan has a
+            blocking billing status, or the current included event allowance is
+            exhausted and no pay-per-event (PPE) credits remain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredResponse'
+              examples:
+                freePlanQuota:
+                  summary: Free-plan event cap reached
+                  value:
+                    error: Free plan quota exceeded
+                    code: FREE_PLAN_QUOTA_EXCEEDED
+                    quota:
+                      plan: free
+                      metric: events
+                      limit: 3000
+                      used: 3000
+                      remaining: 0
+                paidPlanInactive:
+                  summary: Paid workspace billing is blocked
+                  value:
+                    error: Paid plan is not active
+                    code: PAID_PLAN_INACTIVE
+                    billing_status: past_due
+                    plan: pro
+                usageLimit:
+                  summary: Included usage and PPE credits are exhausted
+                  value:
+                    error: 'Usage limit reached: included monthly events are exhausted and no PPE credits remain.'
+        '500':
+          description: An unexpected storage, pricing, billing, or server error occurred.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorResponse'
+              example:
+                error: Internal server error
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Ingestion key in `Authorization: Bearer <key>`. A non-empty Bearer value
+        takes precedence over `x-api-key` when both are present.
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Ingestion key supplied directly in the x-api-key header.
+  schemas:
+    IngestRequest:
+      type: object
+      required:
+        - provider
+        - model
+      additionalProperties: false
+      description: >-
+        The published contract does not permit unknown properties, providing SDK
+        users compile-time protection against misspelled fields. For backward
+        compatibility, the server still accepts and ignores unknown properties
+        at runtime, including a client-supplied `cost`; cost is always computed
+        server-side.
+      properties:
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Provider name. Leading and trailing whitespace is removed before validation and storage.
+        model:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Model name. Leading and trailing whitespace is removed before validation and storage.
+        prompt_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        completion_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        total_tokens:
+          allOf:
+            - $ref: '#/components/schemas/NullableTokenCount'
+          description: >-
+            Explicit non-negative integer total, or null. When omitted or null,
+            the server computes prompt_tokens + completion_tokens +
+            reasoning_tokens, treating each missing or null part as 0. Thus, when
+            no token fields are supplied, the stored total is 0.
+        reasoning_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        cached_input_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        cache_write_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        latency_ms:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: End-to-end latency in milliseconds. Optional; null is accepted and stored.
+        status:
+          type: string
+          enum:
+            - success
+            - error
+            - timeout
+            - cancelled
+          default: success
+          description: >-
+            Outcome of the LLM request. Clients should send one of the four
+            listed values. The server also tolerates null or an empty string
+            and normalizes either to "success", but that leniency is not part
+            of the client contract.
+        feature:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          default: unknown
+          description: >-
+            Feature name. Whitespace is trimmed. A non-empty top-level value wins
+            over metadata.feature; otherwise a valid string metadata.feature is
+            used, then `unknown`.
+        customer_id:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          description: Optional customer identifier. Whitespace is trimmed; an empty string becomes null.
+        customer_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          description: Optional customer display name. Whitespace is trimmed; an empty string becomes null.
+        environment:
+          type:
+            - string
+            - 'null'
+          maxLength: 100
+          default: production
+          description: Whitespace is trimmed; omission, null, or an empty string becomes production.
+        metadata:
+          type:
+            - object
+            - 'null'
+          x-maxSerializedBytes: 8192
+          additionalProperties: true
+          description: >-
+            Optional JSON object, or null. Arrays are rejected. Its UTF-8 JSON
+            serialization must not exceed 8 KiB (8192 bytes). `x-maxSerializedBytes`
+            is an informational extension describing this runtime constraint.
+    NullableTokenCount:
+      type:
+        - integer
+        - 'null'
+      minimum: 0
+      description: Optional non-negative integer; null is accepted.
+    IngestSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - duplicate
+        - id
+        - cost
+        - consumption_source
+        - dashboard_visible
+        - visibility_reason
+        - visibility_context
+        - pricing_status
+      properties:
+        ok:
+          type: boolean
+          const: true
+        duplicate:
+          type: boolean
+          const: false
+        id:
+          type: string
+          description: Identifier of the stored event.
+        cost:
+          type:
+            - number
+            - 'null'
+          minimum: 0
+          description: >-
+            Cost calculated from active server-side pricing. It can be null if
+            post-insert cost calculation fails. A value of 0 with
+            pricing_status=unknown_model means no active pricing row exists.
+        consumption_source:
+          type: string
+          enum: [included, ppe]
+          description: Whether an included event or a pay-per-event credit was consumed.
+        dashboard_visible:
+          type: boolean
+        visibility_reason:
+          type:
+            - string
+            - 'null'
+          enum: [free_source_mismatch, null]
+        visibility_context:
+          oneOf:
+            - $ref: '#/components/schemas/VisibilityContext'
+            - type: 'null'
+        pricing_status:
+          type: string
+          enum: [ok, unknown_model]
+    VisibilityContext:
+      type: object
+      additionalProperties: false
+      required: [mismatched_fields, key_binding, submitted]
+      properties:
+        mismatched_fields:
+          type: array
+          items:
+            type: string
+            enum: [provider, model, feature]
+        key_binding:
+          $ref: '#/components/schemas/SourceTriple'
+        submitted:
+          $ref: '#/components/schemas/SourceTriple'
+    SourceTriple:
+      type: object
+      additionalProperties: false
+      required: [provider, model, feature]
+      properties:
+        provider:
+          type: [string, 'null']
+        model:
+          type: [string, 'null']
+        feature:
+          type: [string, 'null']
+    DuplicateResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, duplicate]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        duplicate:
+          type: boolean
+          const: true
+    InvalidPayloadResponse:
+      type: object
+      additionalProperties: false
+      required: [error, code, field]
+      properties:
+        error:
+          type: string
+          const: Invalid payload
+        code:
+          type: string
+          const: INVALID_PAYLOAD
+        field:
+          type: string
+          enum:
+            - body
+            - provider
+            - model
+            - prompt_tokens
+            - completion_tokens
+            - total_tokens
+            - reasoning_tokens
+            - cached_input_tokens
+            - cache_write_tokens
+            - latency_ms
+            - status
+            - feature
+            - customer_id
+            - customer_name
+            - environment
+            - metadata
+    AuthErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum:
+            - Missing API key
+            - Invalid API key
+            - Revoked API key
+            - Inactive API key
+            - Invalid workspace for API key
+    PaymentRequiredResponse:
+      oneOf:
+        - $ref: '#/components/schemas/FreePlanQuotaResponse'
+        - $ref: '#/components/schemas/PaidPlanInactiveResponse'
+        - $ref: '#/components/schemas/UsageLimitResponse'
+    FreePlanQuotaResponse:
+      type: object
+      additionalProperties: false
+      required: [error, code, quota]
+      properties:
+        error:
+          type: string
+          const: Free plan quota exceeded
+        code:
+          type: string
+          const: FREE_PLAN_QUOTA_EXCEEDED
+        quota:
+          type: object
+          additionalProperties: false
+          required: [plan, metric, limit, used, remaining]
+          properties:
+            plan:
+              type: string
+              const: free
+            metric:
+              type: string
+              const: events
+            limit:
+              type: integer
+              minimum: 0
+            used:
+              type: integer
+              minimum: 0
+            remaining:
+              type: integer
+              minimum: 0
+    PaidPlanInactiveResponse:
+      type: object
+      additionalProperties: false
+      required: [error, code, billing_status, plan]
+      properties:
+        error:
+          type: string
+          const: Paid plan is not active
+        code:
+          type: string
+          const: PAID_PLAN_INACTIVE
+        billing_status:
+          type: string
+          enum: [past_due, unpaid, canceled, incomplete_expired]
+        plan:
+          type: string
+          description: Normalized workspace plan name.
+    UsageLimitResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          const: 'Usage limit reached: included monthly events are exhausted and no PPE credits remain.'
+    InternalErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          const: Internal server error
