@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+packages/node/src/generated/
+packages/python/src/llmtrack_sdk/_generated/

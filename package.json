@@ -1,0 +1,23 @@
+{
+  "name": "llmtrack-sdks-workspace",
+  "private": true,
+  "scripts": {
+    "generate": "npm run generate:node && npm run generate:python",
+    "generate:node": "rimraf packages/node/src/generated && openapi-generator-cli generate -i spec/openapi.yaml -g typescript-fetch -o packages/node/src/generated --additional-properties=supportsES6=true,typescriptThreePlus=true",
+    "generate:python": "rimraf packages/python/src/llmtrack_sdk/_generated && openapi-generator-cli generate -i spec/openapi.yaml -g python -o packages/python/src/llmtrack_sdk/_generated --additional-properties=packageName=llmtrack_generated,projectName=llmtrack-generated",
+    "build": "npm run generate && npm --prefix packages/node run build && python -m build packages/python",
+    "test": "npm --prefix packages/node test && python -m pytest packages/python/tests"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "2.25.2",
+    "rimraf": "6.0.1"
+  },
+  "openapi-generator-cli": {
+    "version": "7.25.0"
+  },
+  "overrides": {
+    "rimraf": {
+      "glob": "13.0.0"
+    }
+  }
+}
