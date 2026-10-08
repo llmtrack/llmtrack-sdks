@@ -8,12 +8,12 @@
   "files": ["dist", "README.md", "LICENSE"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/othmanemer9-cloud/llmtrack-sdks.git",
+    "url": "git+https://github.com/llmtrack/llmtrack-sdks.git",
     "directory": "packages/node"
   },
   "homepage": "https://llm-track.com",
   "bugs": {
-    "url": "https://github.com/othmanemer9-cloud/llmtrack-sdks/issues"
+    "url": "https://github.com/llmtrack/llmtrack-sdks/issues"
   },
   "keywords": ["llm", "openai", "anthropic", "cost", "cost-tracking", "observability", "tokens", "ai"],
   "scripts": {"build": "tsc", "test": "vitest run", "integration": "node integration.mjs"},

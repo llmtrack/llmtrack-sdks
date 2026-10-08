@@ -73,3 +73,46 @@ async def test_invalid_cache_accounting_is_rejected():
     with pytest.raises(LLMtrackError, match="cache_accounting"):
         await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1,
             completion_tokens=2, cache_accounting="invalid")
+
+@pytest.mark.asyncio
+async def test_audio_tokens_are_sent_under_wire_names(monkeypatch):
+    seen = {}
+    async def post(self, url, **kwargs):
+        seen.update(kwargs)
+        return httpx.Response(200, json={"ok": True, "duplicate": True})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1, completion_tokens=2,
+        input_audio_tokens=3, output_audio_tokens=4)
+    assert seen["json"] == {"provider": "p", "model": "m", "prompt_tokens": 1, "completion_tokens": 2,
+        "input_audio_tokens": 3, "output_audio_tokens": 4, "environment": "production"}
+
+@pytest.mark.asyncio
+async def test_omitted_audio_tokens_are_left_out_of_body(monkeypatch):
+    seen = {}
+    async def post(self, url, **kwargs):
+        seen.update(kwargs)
+        return httpx.Response(200, json={"ok": True, "duplicate": True})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1, completion_tokens=2)
+    assert "input_audio_tokens" not in seen["json"] and "output_audio_tokens" not in seen["json"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["input_audio_tokens", "output_audio_tokens"])
+@pytest.mark.parametrize("value", [-1, 1.5])
+async def test_invalid_audio_tokens_are_rejected(monkeypatch, field, value):
+    called = False
+    async def post(*args, **kwargs):
+        nonlocal called; called = True
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    with pytest.raises(LLMtrackError, match=field):
+        await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1,
+            completion_tokens=2, **{field: value})
+    assert not called
+
+def test_openai_chat_completions_audio_adapter():
+    usage = {"prompt_tokens": 10, "completion_tokens": 6,
+        "prompt_tokens_details": {"cached_tokens": 4, "audio_tokens": 3},
+        "completion_tokens_details": {"reasoning_tokens": 2, "audio_tokens": 5}}
+    assert from_openai_usage(usage) == {"prompt_tokens": 10, "completion_tokens": 6,
+        "reasoning_tokens": 2, "output_audio_tokens": 5, "cached_input_tokens": 4,
+        "input_audio_tokens": 3, "cache_accounting": "inclusive"}

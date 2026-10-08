@@ -12,3 +12,5 @@ jobs:
         with: {python-version: '3.12'}
       - run: npm install && npm run generate && pip install build && python -m build packages/python
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/python/dist

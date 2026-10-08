@@ -7,10 +7,12 @@ All notable changes to the LLMtrack SDKs are documented in this file.
 ### Node.js
 
 - Added `cacheAccounting` and OpenAI/Anthropic usage adapters.
+- Added `inputAudioTokens` and `outputAudioTokens`, mapped by `fromOpenAIUsage()` from OpenAI's `audio_tokens` usage details.
 
 ### Python
 
 - Added `total_tokens`, cache token fields, `cache_accounting`, and OpenAI/Anthropic usage adapters.
+- Added `input_audio_tokens` and `output_audio_tokens`, mapped by `from_openai_usage()` from OpenAI's `audio_tokens` usage details.
 
 ## 0.1.1
 
