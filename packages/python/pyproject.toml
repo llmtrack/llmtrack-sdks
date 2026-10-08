@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llmtrack-sdk"
-version = "0.1.1"
+version = "0.2.0"
 description = "Server-side SDK for tracking LLM token usage, costs, and observability data in LLMtrack"
 readme = "README.md"
 requires-python = ">=3.9"

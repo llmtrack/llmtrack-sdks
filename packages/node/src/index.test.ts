@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {LLMTrack, LLMtrack, LLMtrackError} from './index.js';
+import {LLMTrack, LLMtrack, LLMtrackError, fromAnthropicUsage, fromOpenAIUsage} from './index.js';
 afterEach(()=>vi.unstubAllGlobals());
 const event={provider:'openai',model:'gpt-4o-mini',promptTokens:1,completionTokens:2};
 describe('LLMtrack',()=>{
@@ -10,4 +10,10 @@ describe('LLMtrack',()=>{
   it('does not retry a bad key',async()=>{const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({}),{status:401}));vi.stubGlobal('fetch',fetch);await expect(new LLMtrack({apiKey:'bad'}).trackSync(event)).rejects.toMatchObject({code:'INVALID_API_KEY'});expect(fetch).toHaveBeenCalledTimes(1);});
   it('keeps an automatic idempotency key stable across 5xx retries',async()=>{const fetch=vi.fn().mockResolvedValueOnce(new Response('{}',{status:500})).mockResolvedValueOnce(new Response(JSON.stringify({ok:true,duplicate:true})));vi.stubGlobal('fetch',fetch);await new LLMtrack({apiKey:'x',maxRetries:2}).trackSync(event);expect(fetch.mock.calls[0][1].headers['Idempotency-Key']).toBe(fetch.mock.calls[1][1].headers['Idempotency-Key']);});
   it('warns only when pricing is unknown',async()=>{const warnings:any[]=[];const body={ok:true,duplicate:false,id:'1',cost:0,consumption_source:'included',dashboard_visible:false,visibility_reason:'free_source_mismatch',visibility_context:{mismatched_fields:['model']},pricing_status:'unknown_model'};vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));await new LLMtrack({apiKey:'x',onWarning:w=>warnings.push(w)}).trackSync(event);expect(warnings.map(w=>w.code)).toEqual(['UNKNOWN_MODEL']);});
+  it('adapts OpenAI Chat Completions usage',()=>{expect(fromOpenAIUsage({prompt_tokens:10,completion_tokens:6,total_tokens:16,prompt_tokens_details:{cached_tokens:4},completion_tokens_details:{reasoning_tokens:2}})).toEqual({promptTokens:10,completionTokens:6,totalTokens:16,cachedInputTokens:4,reasoningTokens:2,cacheAccounting:'inclusive'});});
+  it('adapts OpenAI Responses usage',()=>{expect(fromOpenAIUsage({input_tokens:11,output_tokens:7,total_tokens:18,input_tokens_details:{cached_tokens:5},output_tokens_details:{reasoning_tokens:3}})).toEqual({promptTokens:11,completionTokens:7,totalTokens:18,cachedInputTokens:5,reasoningTokens:3,cacheAccounting:'inclusive'});});
+  it('adapts Anthropic usage',()=>{expect(fromAnthropicUsage({input_tokens:12,output_tokens:8,cache_read_input_tokens:6,cache_creation_input_tokens:4})).toEqual({promptTokens:12,completionTokens:8,cachedInputTokens:6,cacheWriteTokens:4,cacheAccounting:'exclusive'});});
+  it('omits missing adapter fields and accepts null usage',()=>{expect(fromOpenAIUsage({prompt_tokens:10})).toEqual({promptTokens:10,cacheAccounting:'inclusive'});expect(fromAnthropicUsage(null)).toEqual({});});
+  it('serializes cache accounting',async()=>{const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({ok:true,duplicate:true})));vi.stubGlobal('fetch',fetch);await new LLMtrack({apiKey:'x'}).trackSync({...event,cacheAccounting:'exclusive'});expect(JSON.parse(fetch.mock.calls[0][1].body).cache_accounting).toBe('exclusive');});
+  it('rejects invalid cache accounting',async()=>{await expect(new LLMtrack({apiKey:'x'}).trackSync({...event,cacheAccounting:'invalid' as any})).rejects.toMatchObject({code:'INVALID_PAYLOAD'});});
 });

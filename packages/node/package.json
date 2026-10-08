@@ -1,6 +1,6 @@
 {
   "name": "llmtrack",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Server-side SDK for tracking LLM token usage, costs, and observability data in LLMtrack",
   "type": "module",
   "main": "dist/index.js",

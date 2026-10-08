@@ -56,7 +56,9 @@ class LLMtrack:
         threading.Thread(target=run, name="llmtrack", daemon=True).start()
 
     async def track_sync(self, *, provider: str, model: str, prompt_tokens: int, completion_tokens: int,
-                         reasoning_tokens: int | None = None, feature: str | None = None,
+                         total_tokens: int | None = None, reasoning_tokens: int | None = None,
+                         cached_input_tokens: int | None = None, cache_write_tokens: int | None = None,
+                         cache_accounting: str | None = None, feature: str | None = None,
                          customer_id: str | None = None, customer_name: str | None = None,
                          metadata: dict[str, Any] | None = None, latency_ms: int | None = None,
                          status: str | None = None, environment: str | None = None,
@@ -102,10 +104,13 @@ class LLMtrack:
         for name in ("provider", "model"):
             if not isinstance(payload.get(name), str) or not payload[name].strip():
                 raise LLMtrackError("INVALID_PAYLOAD", f"{name} must be a non-empty string.", safe)
-        for name in ("prompt_tokens", "completion_tokens", "reasoning_tokens"):
+        for name in ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens",
+                     "cached_input_tokens", "cache_write_tokens"):
             value = payload.get(name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
                 raise LLMtrackError("INVALID_PAYLOAD", f"{name} must be a non-negative integer.", safe)
+        if payload.get("cache_accounting") not in (None, "inclusive", "exclusive"):
+            raise LLMtrackError("INVALID_PAYLOAD", 'cache_accounting must be "inclusive" or "exclusive".', safe)
         if "metadata" in payload and len(json.dumps(payload["metadata"], separators=(",", ":")).encode()) > 8192:
             raise LLMtrackError("INVALID_PAYLOAD", "metadata must serialize to at most 8192 bytes.", safe)
 
@@ -138,3 +143,50 @@ class LLMtrack:
             if key in _warned: return
             _warned.add(key)
         self.on_warning(LLMtrackWarning(code, message))
+
+
+_MISSING = object()
+
+
+def _usage_value(usage: Any, name: str) -> Any:
+    if isinstance(usage, dict):
+        return usage.get(name, _MISSING)
+    return getattr(usage, name, _MISSING)
+
+
+def from_openai_usage(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    chat = any(_usage_value(usage, name) is not _MISSING for name in
+               ("prompt_tokens", "completion_tokens", "prompt_tokens_details", "completion_tokens_details"))
+    result: dict[str, Any] = {"cache_accounting": "inclusive"}
+    for target, name in (("prompt_tokens", "prompt_tokens" if chat else "input_tokens"),
+                         ("completion_tokens", "completion_tokens" if chat else "output_tokens"),
+                         ("total_tokens", "total_tokens")):
+        value = _usage_value(usage, name)
+        if value is not _MISSING:
+            result[target] = value
+    reasoning = _usage_value(usage, "completion_tokens_details" if chat else "output_tokens_details")
+    if reasoning is not _MISSING and reasoning is not None:
+        value = _usage_value(reasoning, "reasoning_tokens")
+        if value is not _MISSING:
+            result["reasoning_tokens"] = value
+    cached = _usage_value(usage, "prompt_tokens_details" if chat else "input_tokens_details")
+    if cached is not _MISSING and cached is not None:
+        value = _usage_value(cached, "cached_tokens")
+        if value is not _MISSING:
+            result["cached_input_tokens"] = value
+    return result
+
+
+def from_anthropic_usage(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    result: dict[str, Any] = {"cache_accounting": "exclusive"}
+    for target, name in (("prompt_tokens", "input_tokens"), ("completion_tokens", "output_tokens"),
+                         ("cached_input_tokens", "cache_read_input_tokens"),
+                         ("cache_write_tokens", "cache_creation_input_tokens")):
+        value = _usage_value(usage, name)
+        if value is not _MISSING:
+            result[target] = value
+    return result

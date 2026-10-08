@@ -33,6 +33,7 @@ export interface LLMtrackWarning { code: 'UNKNOWN_MODEL'; message: string }
 export interface TrackOptions {
   provider: string; model: string; promptTokens?: number | null; completionTokens?: number | null; totalTokens?: number | null;
   reasoningTokens?: number | null; cachedInputTokens?: number | null; cacheWriteTokens?: number | null;
+  cacheAccounting?: 'inclusive' | 'exclusive';
   feature?: string; customerId?: string; customerName?: string; metadata?: Record<string, unknown>;
   latencyMs?: number | null; status?: 'success'|'error'|'timeout'|'cancelled'; environment?: string; idempotencyKey?: string;
 }
@@ -62,6 +63,7 @@ export class LLMtrack {
   private payload(input: TrackOptions): IngestRequest {
     const payload: IngestRequest = {provider:input.provider, model:input.model, promptTokens:input.promptTokens, completionTokens:input.completionTokens,
       totalTokens:input.totalTokens, reasoningTokens:input.reasoningTokens, cachedInputTokens:input.cachedInputTokens, cacheWriteTokens:input.cacheWriteTokens,
+      cacheAccounting:input.cacheAccounting,
       feature:input.feature, customerId:input.customerId, customerName:input.customerName,
       metadata:input.metadata, latencyMs:input.latencyMs, status:input.status, environment:input.environment ?? this.environment};
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v!==undefined)) as unknown as IngestRequest;
@@ -70,6 +72,8 @@ export class LLMtrack {
     if (!input.model?.trim()) throw new LLMtrackError('INVALID_PAYLOAD','model must be a non-empty string.',safe);
     for (const [name,value] of [['promptTokens',input.promptTokens],['completionTokens',input.completionTokens],['totalTokens',input.totalTokens],['reasoningTokens',input.reasoningTokens],['cachedInputTokens',input.cachedInputTokens],['cacheWriteTokens',input.cacheWriteTokens],['latencyMs',input.latencyMs]] as const)
       if (value != null && (!Number.isInteger(value) || value < 0)) throw new LLMtrackError('INVALID_PAYLOAD',`${name} must be a non-negative integer.`,safe);
+    if (input.cacheAccounting !== undefined && input.cacheAccounting !== 'inclusive' && input.cacheAccounting !== 'exclusive')
+      throw new LLMtrackError('INVALID_PAYLOAD','cacheAccounting must be "inclusive" or "exclusive".',safe);
     if (input.metadata !== undefined && new TextEncoder().encode(JSON.stringify(input.metadata)).length > 8192)
       throw new LLMtrackError('INVALID_PAYLOAD','metadata must serialize to at most 8192 bytes.',safe);
     return clean;
@@ -91,7 +95,7 @@ export class LLMtrack {
     throw new LLMtrackError('NETWORK_ERROR','Request failed after retries; check network connectivity and the LLMtrack URL.',this.withoutMetadata(payload),undefined,last);
   }
   private wirePayload(p: IngestRequest): Record<string, unknown> {
-    const names: Record<string,string>={promptTokens:'prompt_tokens',completionTokens:'completion_tokens',totalTokens:'total_tokens',reasoningTokens:'reasoning_tokens',cachedInputTokens:'cached_input_tokens',cacheWriteTokens:'cache_write_tokens',latencyMs:'latency_ms',customerId:'customer_id',customerName:'customer_name'};
+    const names: Record<string,string>={promptTokens:'prompt_tokens',completionTokens:'completion_tokens',totalTokens:'total_tokens',reasoningTokens:'reasoning_tokens',cachedInputTokens:'cached_input_tokens',cacheWriteTokens:'cache_write_tokens',cacheAccounting:'cache_accounting',latencyMs:'latency_ms',customerId:'customer_id',customerName:'customer_name'};
     return Object.fromEntries(Object.entries(p).map(([key,value])=>[names[key]??key,value]));
   }
   private result(body:any):TrackResult {
@@ -116,3 +120,32 @@ export class LLMtrack {
 }
 
 export { LLMtrack as LLMTrack };
+
+function supplied(source: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined;
+}
+
+export function fromOpenAIUsage(usage: unknown): Partial<Pick<TrackOptions, 'promptTokens'|'completionTokens'|'totalTokens'|'reasoningTokens'|'cachedInputTokens'|'cacheAccounting'>> {
+  if (usage == null || typeof usage !== 'object') return {};
+  const source = usage as Record<string, unknown>;
+  const chat = 'prompt_tokens' in source || 'completion_tokens' in source || 'prompt_tokens_details' in source || 'completion_tokens_details' in source;
+  const result: Record<string, unknown> = {cacheAccounting:'inclusive'};
+  const copy = (target: string, key: string) => { if (supplied(source,key)) result[target]=source[key]; };
+  copy('promptTokens',chat?'prompt_tokens':'input_tokens');
+  copy('completionTokens',chat?'completion_tokens':'output_tokens');
+  copy('totalTokens','total_tokens');
+  const reasoning = source[chat?'completion_tokens_details':'output_tokens_details'];
+  if (reasoning != null && typeof reasoning === 'object' && supplied(reasoning as Record<string, unknown>,'reasoning_tokens')) result.reasoningTokens=(reasoning as Record<string, unknown>).reasoning_tokens;
+  const cached = source[chat?'prompt_tokens_details':'input_tokens_details'];
+  if (cached != null && typeof cached === 'object' && supplied(cached as Record<string, unknown>,'cached_tokens')) result.cachedInputTokens=(cached as Record<string, unknown>).cached_tokens;
+  return result as Partial<Pick<TrackOptions, 'promptTokens'|'completionTokens'|'totalTokens'|'reasoningTokens'|'cachedInputTokens'|'cacheAccounting'>>;
+}
+
+export function fromAnthropicUsage(usage: unknown): Partial<Pick<TrackOptions, 'promptTokens'|'completionTokens'|'cachedInputTokens'|'cacheWriteTokens'|'cacheAccounting'>> {
+  if (usage == null || typeof usage !== 'object') return {};
+  const source = usage as Record<string, unknown>;
+  const result: Record<string, unknown> = {cacheAccounting:'exclusive'};
+  for (const [target,key] of [['promptTokens','input_tokens'],['completionTokens','output_tokens'],['cachedInputTokens','cache_read_input_tokens'],['cacheWriteTokens','cache_creation_input_tokens']] as const)
+    if (supplied(source,key)) result[target]=source[key];
+  return result as Partial<Pick<TrackOptions, 'promptTokens'|'completionTokens'|'cachedInputTokens'|'cacheWriteTokens'|'cacheAccounting'>>;
+}

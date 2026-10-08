@@ -42,7 +42,8 @@ const event: TrackOptions = { provider: 'openai', model: 'gpt-5.6-sol', promptTo
 ## Common mistakes
 
 - **Class casing:** the canonical class is `LLMtrack`, with a lowercase `t`. Python also exports `LLMTrack` as a safety alias, but documentation and examples use `LLMtrack`.
-- **Field casing:** Python accepts snake_case event fields only (for example, `prompt_tokens`); Node.js accepts camelCase only (for example, `promptTokens`). Wrong-casing spellings are silently ignored by the corresponding wrapper.
+- **Field casing:** Python accepts snake_case event fields only (for example, `prompt_tokens`); an unknown or wrong-cased key causes an unexpected-keyword `TypeError`, reported through `on_error` when using `track()`. Node.js accepts camelCase only and silently drops unknown runtime properties (while TypeScript normally rejects them).
+- **Provider usage:** use `from_openai_usage()` or `from_anthropic_usage()` rather than manually copying token counts and cache-accounting conventions.
 - **Cost:** do not supply `cost`; client-supplied cost is ignored because LLMtrack computes cost server-side.
 
 ## Provider examples
@@ -54,12 +55,10 @@ Both examples call `track()` immediately after the provider completion and read 
 ```python
 import os
 from openai import OpenAI
-from llmtrack_sdk import LLMtrack
+from llmtrack_sdk import LLMtrack, from_openai_usage
 openai, tracker = OpenAI(), LLMtrack(api_key=os.environ["LLMTRACK_API_KEY"])
 response = openai.chat.completions.create(model="gpt-5.6-sol", messages=[{"role": "user", "content": "Explain why the sky is blue in two sentences."}])
-usage = response.usage
-tracker.track(provider="openai", model=response.model, prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens,
-              reasoning_tokens=usage.completion_tokens_details.reasoning_tokens if usage.completion_tokens_details else 0, feature="science-explainer")
+tracker.track(provider="openai", model=response.model, **from_openai_usage(response.usage), feature="science-explainer")
 ```
 
 ### Anthropic
@@ -69,12 +68,15 @@ Anthropic includes thinking tokens in `output_tokens` rather than exposing a sep
 ```python
 import os
 from anthropic import Anthropic
-from llmtrack_sdk import LLMtrack
+from llmtrack_sdk import LLMtrack, from_anthropic_usage
 anthropic, tracker = Anthropic(), LLMtrack(api_key=os.environ["LLMTRACK_API_KEY"])
 response = anthropic.messages.create(model="claude-opus-5", max_tokens=1024, messages=[{"role": "user", "content": "Summarize the benefits of typed APIs."}])
-tracker.track(provider="anthropic", model=response.model, prompt_tokens=response.usage.input_tokens,
-              completion_tokens=response.usage.output_tokens, feature="document-summary")
+tracker.track(provider="anthropic", model=response.model, **from_anthropic_usage(response.usage), feature="document-summary")
 ```
+
+### Cache accounting conventions
+
+OpenAI-style usage is **inclusive**: prompt tokens already include cached input tokens, and completion tokens already include reasoning tokens. Anthropic-style usage is **exclusive**: input tokens exclude cache reads and writes reported separately. The adapters label these conventions automatically. Set `cache_accounting` yourself only when the server cannot infer the convention, such as for a gateway or an unrecognised vendor; use exactly `inclusive` or `exclusive`.
 
 ## Fire-and-forget and awaited usage
 
@@ -109,7 +111,7 @@ tracker = LLMtrack(api_key=os.environ["LLMTRACK_API_KEY"], enabled=False)
 
 ## Event fields
 
-The wrapper intentionally accepts the following snake-case subset of the `IngestRequest` contract. `total_tokens`, `cached_input_tokens`, and `cache_write_tokens` exist in the wire contract but are not arguments in the current Python public API; do not pass them to this SDK.
+The wrapper accepts the following snake-case fields from the `IngestRequest` contract.
 
 | Name | Type | Requirement | Description |
 |---|---|---|---|
@@ -117,10 +119,11 @@ The wrapper intentionally accepts the following snake-case subset of the `Ingest
 | `model` | `str` | required | Provider model name, such as `gpt-5.6-sol`. |
 | `prompt_tokens` | `int` | required | Non-negative integer input-token count. |
 | `completion_tokens` | `int` | required | Non-negative integer output-token count. |
-| `total_tokens` | `int \| None` | not exposed | Optional explicit total in `IngestRequest`; the current wrapper relies on the server-computed total. |
+| `total_tokens` | `int \| None` | optional | Optional explicit total; when absent, the server computes it. |
 | `reasoning_tokens` | `int \| None` | optional | Non-negative reasoning-token count when separately reported. |
-| `cached_input_tokens` | `int \| None` | not exposed | Optional cached-input count in `IngestRequest`; not an argument in the current Python public API. |
-| `cache_write_tokens` | `int \| None` | not exposed | Optional cache-write count in `IngestRequest`; not an argument in the current Python public API. |
+| `cached_input_tokens` | `int \| None` | optional | Optional cached-input count. |
+| `cache_write_tokens` | `int \| None` | optional | Optional cache-write count. |
+| `cache_accounting` | `str \| None` | optional | `inclusive` or `exclusive`; overrides the inferred cache-accounting convention. |
 | `latency_ms` | `int \| None` | optional | End-to-end latency in milliseconds. |
 | `status` | `str \| None` | optional | One of `success`, `error`, `timeout`, or `cancelled`. |
 | `feature` | `str \| None` | optional | Product feature, such as `support-chat`; defaults server-side to `unknown`. |
@@ -130,7 +133,7 @@ The wrapper intentionally accepts the following snake-case subset of the `Ingest
 | `metadata` | `dict[str, Any] \| None` | optional | JSON object containing request context; maximum serialized size is 8 KiB (8192 bytes). |
 | `idempotency_key` | `str \| None` | optional | SDK-only header option used to deduplicate the call, not an event-body field. |
 
-The client validates `prompt_tokens`, `completion_tokens`, and `reasoning_tokens` as non-negative integers and rejects metadata whose compact UTF-8 JSON serialization exceeds 8192 bytes. The server validates the remaining contract constraints.
+The client validates all token-count fields as non-negative integers, validates `cache_accounting`, and rejects metadata whose compact UTF-8 JSON serialization exceeds 8192 bytes. The server validates the remaining contract constraints.
 
 ## Delivery, retries, and idempotency
 
