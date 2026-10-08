@@ -46,7 +46,8 @@ You can then pass `event` to `tracker.track(event)` or `await tracker.trackSync(
 ## Common mistakes
 
 - **Class casing:** use the canonical `LLMtrack` spelling, with a lowercase `t`. `LLMTrack` is also exported as a safety alias, but documentation and examples use `LLMtrack`.
-- **Field casing:** Node.js accepts camelCase event fields only (for example, `promptTokens`). Snake-case spellings such as `prompt_tokens` are silently ignored.
+- **Field casing:** Node.js accepts camelCase event fields only (for example, `promptTokens`). Unknown properties, including snake-case spellings such as `prompt_tokens`, are silently dropped at runtime (and normally rejected by TypeScript excess-property checking).
+- **Provider usage:** use `fromOpenAIUsage()` or `fromAnthropicUsage()` rather than manually copying token counts and cache-accounting conventions.
 - **Cost:** do not supply `cost`; client-supplied cost is ignored because LLMtrack computes cost server-side.
 
 ## Provider examples
@@ -59,12 +60,11 @@ OpenAI reports reasoning tokens inside `completion_tokens_details`:
 
 ```ts
 import OpenAI from 'openai';
-import { LLMtrack } from 'llmtrack';
+import { LLMtrack, fromOpenAIUsage } from 'llmtrack';
 const openai = new OpenAI();
 const tracker = new LLMtrack({ apiKey: process.env.LLMTRACK_API_KEY! });
 const response = await openai.chat.completions.create({ model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'Explain why the sky is blue in two sentences.' }] });
-tracker.track({ provider: 'openai', model: response.model, promptTokens: response.usage?.prompt_tokens ?? 0, completionTokens: response.usage?.completion_tokens ?? 0,
-  reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0, feature: 'science-explainer' });
+tracker.track({ provider: 'openai', model: response.model, ...fromOpenAIUsage(response.usage), feature: 'science-explainer' });
 ```
 
 ### Anthropic
@@ -73,13 +73,16 @@ Anthropic reports `input_tokens` and `output_tokens`; thinking tokens are includ
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMtrack } from 'llmtrack';
+import { LLMtrack, fromAnthropicUsage } from 'llmtrack';
 const anthropic = new Anthropic();
 const tracker = new LLMtrack({ apiKey: process.env.LLMTRACK_API_KEY! });
 const response = await anthropic.messages.create({ model: 'claude-opus-5', max_tokens: 1024, messages: [{ role: 'user', content: 'Summarize the benefits of typed APIs.' }] });
-tracker.track({ provider: 'anthropic', model: response.model, promptTokens: response.usage.input_tokens, completionTokens: response.usage.output_tokens,
-  cachedInputTokens: response.usage.cache_read_input_tokens ?? 0, cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0, feature: 'document-summary' });
+tracker.track({ provider: 'anthropic', model: response.model, ...fromAnthropicUsage(response.usage), feature: 'document-summary' });
 ```
+
+### Cache accounting conventions
+
+OpenAI-style usage is **inclusive**: prompt tokens already include cached input tokens, and completion tokens already include reasoning tokens. Anthropic-style usage is **exclusive**: input tokens exclude cache reads and writes reported separately. The adapters label these conventions automatically. Set `cacheAccounting` yourself only when the server cannot infer the convention, such as for a gateway or an unrecognised vendor; use exactly `inclusive` or `exclusive`.
 
 ## `track()` and `trackSync()`
 
@@ -121,6 +124,7 @@ Names below are the camel-case `TrackOptions` names; the SDK maps them to the `I
 | `reasoningTokens` | `number \| null` | optional | Non-negative reasoning-token count when the provider reports it separately. |
 | `cachedInputTokens` | `number \| null` | optional | Non-negative cached input-token count. |
 | `cacheWriteTokens` | `number \| null` | optional | Non-negative cache-write token count. |
+| `cacheAccounting` | `inclusive \| exclusive` | optional | Overrides whether primary token counts include or exclude separately reported cache/reasoning tokens. |
 | `latencyMs` | `number \| null` | optional | Non-negative integer end-to-end latency in milliseconds. |
 | `status` | `success \| error \| timeout \| cancelled` | optional | Request outcome; the server defaults to `success`. |
 | `feature` | `string` | optional | Product feature, such as `support-chat`; defaults server-side to `unknown`. |

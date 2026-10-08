@@ -2,6 +2,16 @@
 
 All notable changes to the LLMtrack SDKs are documented in this file.
 
+## 0.2.0
+
+### Node.js
+
+- Added `cacheAccounting` and OpenAI/Anthropic usage adapters.
+
+### Python
+
+- Added `total_tokens`, cache token fields, `cache_accounting`, and OpenAI/Anthropic usage adapters.
+
 ## 0.1.1
 
 - Removed obsolete free-plan key-binding visibility warnings and their documentation while retaining unknown-model pricing warnings.

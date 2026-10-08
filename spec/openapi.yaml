@@ -212,6 +212,10 @@ components:
           $ref: '#/components/schemas/NullableTokenCount'
         cache_write_tokens:
           $ref: '#/components/schemas/NullableTokenCount'
+        cache_accounting:
+          type: string
+          enum: [inclusive, exclusive]
+          description: Whether primary token counts include or exclude separately reported cache and reasoning tokens.
         latency_ms:
           type:
             - integer
@@ -388,6 +392,7 @@ components:
             - reasoning_tokens
             - cached_input_tokens
             - cache_write_tokens
+            - cache_accounting
             - latency_ms
             - status
             - feature
