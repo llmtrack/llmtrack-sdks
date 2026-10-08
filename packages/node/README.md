@@ -124,6 +124,8 @@ Names below are the camel-case `TrackOptions` names; the SDK maps them to the `I
 | `reasoningTokens` | `number \| null` | optional | Non-negative reasoning-token count when the provider reports it separately. |
 | `cachedInputTokens` | `number \| null` | optional | Non-negative cached input-token count. |
 | `cacheWriteTokens` | `number \| null` | optional | Non-negative cache-write token count. |
+| `inputAudioTokens` | `number \| null` | optional | Non-negative audio input-token count. |
+| `outputAudioTokens` | `number \| null` | optional | Non-negative audio output-token count. |
 | `cacheAccounting` | `inclusive \| exclusive` | optional | Overrides whether primary token counts include or exclude separately reported cache/reasoning tokens. |
 | `latencyMs` | `number \| null` | optional | Non-negative integer end-to-end latency in milliseconds. |
 | `status` | `success \| error \| timeout \| cancelled` | optional | Request outcome; the server defaults to `success`. |

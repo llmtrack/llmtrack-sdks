@@ -212,15 +212,17 @@ components:
           $ref: '#/components/schemas/NullableTokenCount'
         cache_write_tokens:
           $ref: '#/components/schemas/NullableTokenCount'
+        input_audio_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
+        output_audio_tokens:
+          $ref: '#/components/schemas/NullableTokenCount'
         cache_accounting:
           type: string
           enum: [inclusive, exclusive]
           description: Whether primary token counts include or exclude separately reported cache and reasoning tokens.
         latency_ms:
-          type:
-            - integer
-            - 'null'
-          minimum: 0
+          allOf:
+            - $ref: '#/components/schemas/NullableMilliseconds'
           description: End-to-end latency in milliseconds. Optional; null is accepted and stored.
         status:
           type: string
@@ -280,6 +282,12 @@ components:
         - 'null'
       minimum: 0
       description: Optional non-negative integer; null is accepted.
+    NullableMilliseconds:
+      type:
+        - integer
+        - 'null'
+      minimum: 0
+      description: Optional non-negative duration in milliseconds; null is accepted.
     IngestSuccess:
       type: object
       additionalProperties: false
@@ -392,6 +400,8 @@ components:
             - reasoning_tokens
             - cached_input_tokens
             - cache_write_tokens
+            - input_audio_tokens
+            - output_audio_tokens
             - cache_accounting
             - latency_ms
             - status

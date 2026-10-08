@@ -58,6 +58,7 @@ class LLMtrack:
     async def track_sync(self, *, provider: str, model: str, prompt_tokens: int, completion_tokens: int,
                          total_tokens: int | None = None, reasoning_tokens: int | None = None,
                          cached_input_tokens: int | None = None, cache_write_tokens: int | None = None,
+                         input_audio_tokens: int | None = None, output_audio_tokens: int | None = None,
                          cache_accounting: str | None = None, feature: str | None = None,
                          customer_id: str | None = None, customer_name: str | None = None,
                          metadata: dict[str, Any] | None = None, latency_ms: int | None = None,
@@ -105,7 +106,7 @@ class LLMtrack:
             if not isinstance(payload.get(name), str) or not payload[name].strip():
                 raise LLMtrackError("INVALID_PAYLOAD", f"{name} must be a non-empty string.", safe)
         for name in ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens",
-                     "cached_input_tokens", "cache_write_tokens"):
+                     "cached_input_tokens", "cache_write_tokens", "input_audio_tokens", "output_audio_tokens"):
             value = payload.get(name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
                 raise LLMtrackError("INVALID_PAYLOAD", f"{name} must be a non-negative integer.", safe)
@@ -171,11 +172,17 @@ def from_openai_usage(usage: Any) -> dict[str, Any]:
         value = _usage_value(reasoning, "reasoning_tokens")
         if value is not _MISSING:
             result["reasoning_tokens"] = value
+        value = _usage_value(reasoning, "audio_tokens")
+        if value is not _MISSING:
+            result["output_audio_tokens"] = value
     cached = _usage_value(usage, "prompt_tokens_details" if chat else "input_tokens_details")
     if cached is not _MISSING and cached is not None:
         value = _usage_value(cached, "cached_tokens")
         if value is not _MISSING:
             result["cached_input_tokens"] = value
+        value = _usage_value(cached, "audio_tokens")
+        if value is not _MISSING:
+            result["input_audio_tokens"] = value
     return result
 
 

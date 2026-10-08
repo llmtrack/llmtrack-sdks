@@ -15,8 +15,8 @@ keywords = ["llm", "openai", "anthropic", "cost", "cost-tracking", "observabilit
 [project.urls]
 Homepage = "https://llm-track.com"
 Documentation = "https://llm-track.com/docs"
-Repository = "https://github.com/othmanemer9-cloud/llmtrack-sdks"
-Issues = "https://github.com/othmanemer9-cloud/llmtrack-sdks/issues"
+Repository = "https://github.com/llmtrack/llmtrack-sdks"
+Issues = "https://github.com/llmtrack/llmtrack-sdks/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.24"]

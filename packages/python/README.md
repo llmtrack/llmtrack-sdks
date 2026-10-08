@@ -123,6 +123,8 @@ The wrapper accepts the following snake-case fields from the `IngestRequest` con
 | `reasoning_tokens` | `int \| None` | optional | Non-negative reasoning-token count when separately reported. |
 | `cached_input_tokens` | `int \| None` | optional | Optional cached-input count. |
 | `cache_write_tokens` | `int \| None` | optional | Optional cache-write count. |
+| `input_audio_tokens` | `int \| None` | optional | Optional audio input-token count. |
+| `output_audio_tokens` | `int \| None` | optional | Optional audio output-token count. |
 | `cache_accounting` | `str \| None` | optional | `inclusive` or `exclusive`; overrides the inferred cache-accounting convention. |
 | `latency_ms` | `int \| None` | optional | End-to-end latency in milliseconds. |
 | `status` | `str \| None` | optional | One of `success`, `error`, `timeout`, or `cancelled`. |
