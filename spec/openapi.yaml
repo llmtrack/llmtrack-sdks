@@ -414,6 +414,7 @@ components:
             - customer_name
             - environment
             - metadata
+            - response_id
     AuthErrorResponse:
       type: object
       additionalProperties: false
