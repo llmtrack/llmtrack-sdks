@@ -58,7 +58,7 @@ from openai import OpenAI
 from llmtrack_sdk import LLMtrack, from_openai_usage
 openai, tracker = OpenAI(), LLMtrack(api_key=os.environ["LLMTRACK_API_KEY"])
 response = openai.chat.completions.create(model="gpt-5.6-sol", messages=[{"role": "user", "content": "Explain why the sky is blue in two sentences."}])
-tracker.track(provider="openai", model=response.model, **from_openai_usage(response.usage), feature="science-explainer")
+tracker.track(provider="openai", model=response.model, **from_openai_usage(response.usage), response_id=response.id, feature="science-explainer")
 ```
 
 ### Anthropic
@@ -71,7 +71,7 @@ from anthropic import Anthropic
 from llmtrack_sdk import LLMtrack, from_anthropic_usage
 anthropic, tracker = Anthropic(), LLMtrack(api_key=os.environ["LLMTRACK_API_KEY"])
 response = anthropic.messages.create(model="claude-opus-5", max_tokens=1024, messages=[{"role": "user", "content": "Summarize the benefits of typed APIs."}])
-tracker.track(provider="anthropic", model=response.model, **from_anthropic_usage(response.usage), feature="document-summary")
+tracker.track(provider="anthropic", model=response.model, **from_anthropic_usage(response.usage), response_id=response.id, feature="document-summary")
 ```
 
 ### Cache accounting conventions
@@ -133,6 +133,7 @@ The wrapper accepts the following snake-case fields from the `IngestRequest` con
 | `customer_name` | `str \| None` | optional | Your customer display name. |
 | `environment` | `str \| None` | optional | Overrides the constructor environment for this event. |
 | `metadata` | `dict[str, Any] \| None` | optional | JSON object containing request context; maximum serialized size is 8 KiB (8192 bytes). |
+| `response_id` | `str \| None` | optional | The provider's response ID. Send it whenever you have it: if the same request also reaches LLMtrack from a gateway export, it's kept as one row and counted once. |
 | `idempotency_key` | `str \| None` | optional | SDK-only header option used to deduplicate the call, not an event-body field. |
 
 The client validates all token-count fields as non-negative integers, validates `cache_accounting`, and rejects metadata whose compact UTF-8 JSON serialization exceeds 8192 bytes. The server validates the remaining contract constraints.

@@ -63,7 +63,8 @@ class LLMtrack:
                          customer_id: str | None = None, customer_name: str | None = None,
                          metadata: dict[str, Any] | None = None, latency_ms: int | None = None,
                          status: str | None = None, environment: str | None = None,
-                         idempotency_key: str | None = None) -> dict[str, Any] | None:
+                         idempotency_key: str | None = None,
+                         response_id: str | None = None) -> dict[str, Any] | None:
         if not self.enabled:
             return None
         raw = locals().copy(); raw.pop("self")
@@ -112,6 +113,9 @@ class LLMtrack:
                 raise LLMtrackError("INVALID_PAYLOAD", f"{name} must be a non-negative integer.", safe)
         if payload.get("cache_accounting") not in (None, "inclusive", "exclusive"):
             raise LLMtrackError("INVALID_PAYLOAD", 'cache_accounting must be "inclusive" or "exclusive".', safe)
+        if "response_id" in payload and (not isinstance(payload["response_id"], str) or not payload["response_id"].strip()
+                                         or len(payload["response_id"]) > 256):
+            raise LLMtrackError("INVALID_PAYLOAD", "response_id must be a non-empty string of at most 256 characters.", safe)
         if "metadata" in payload and len(json.dumps(payload["metadata"], separators=(",", ":")).encode()) > 8192:
             raise LLMtrackError("INVALID_PAYLOAD", "metadata must serialize to at most 8192 bytes.", safe)
 

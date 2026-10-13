@@ -276,6 +276,10 @@ components:
             Optional JSON object, or null. Arrays are rejected. Its UTF-8 JSON
             serialization must not exceed 8 KiB (8192 bytes). `x-maxSerializedBytes`
             is an informational extension describing this runtime constraint.
+        response_id:
+          type: string
+          maxLength: 256
+          description: "The provider's response ID (e.g. chatcmpl-…). Lets LLMtrack keep one row when the same request also arrives from a gateway export."
     NullableTokenCount:
       type:
         - integer

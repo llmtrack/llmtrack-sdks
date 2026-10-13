@@ -1,6 +1,6 @@
 {
   "name": "llmtrack",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Server-side SDK for tracking LLM token usage, costs, and observability data in LLMtrack",
   "type": "module",
   "main": "dist/index.js",
@@ -16,8 +16,9 @@
     "url": "https://github.com/llmtrack/llmtrack-sdks/issues"
   },
   "keywords": ["llm", "openai", "anthropic", "cost", "cost-tracking", "observability", "tokens", "ai"],
-  "scripts": {"build": "tsc", "test": "vitest run", "integration": "node integration.mjs"},
-  "devDependencies": {"typescript": "5.9.2", "vitest": "3.2.4", "@types/node": "24.3.0"},
+  "scripts": {"build": "rimraf dist && tsc", "test": "vitest run", "integration": "node integration.mjs"},
+  "devDependencies": {"typescript": "5.9.2", "vitest": "3.2.4", "@types/node": "24.3.0", "rimraf": "6.0.1"},
+  "overrides": {"rimraf": {"glob": "13.0.0"}},
   "engines": {"node": ">=18"},
   "license": "MIT",
   "publishConfig": {"access": "public"}

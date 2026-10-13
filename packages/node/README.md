@@ -64,7 +64,7 @@ import { LLMtrack, fromOpenAIUsage } from 'llmtrack';
 const openai = new OpenAI();
 const tracker = new LLMtrack({ apiKey: process.env.LLMTRACK_API_KEY! });
 const response = await openai.chat.completions.create({ model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'Explain why the sky is blue in two sentences.' }] });
-tracker.track({ provider: 'openai', model: response.model, ...fromOpenAIUsage(response.usage), feature: 'science-explainer' });
+tracker.track({ provider: 'openai', model: response.model, ...fromOpenAIUsage(response.usage), responseId: response.id, feature: 'science-explainer' });
 ```
 
 ### Anthropic
@@ -77,7 +77,7 @@ import { LLMtrack, fromAnthropicUsage } from 'llmtrack';
 const anthropic = new Anthropic();
 const tracker = new LLMtrack({ apiKey: process.env.LLMTRACK_API_KEY! });
 const response = await anthropic.messages.create({ model: 'claude-opus-5', max_tokens: 1024, messages: [{ role: 'user', content: 'Summarize the benefits of typed APIs.' }] });
-tracker.track({ provider: 'anthropic', model: response.model, ...fromAnthropicUsage(response.usage), feature: 'document-summary' });
+tracker.track({ provider: 'anthropic', model: response.model, ...fromAnthropicUsage(response.usage), responseId: response.id, feature: 'document-summary' });
 ```
 
 ### Cache accounting conventions
@@ -134,6 +134,7 @@ Names below are the camel-case `TrackOptions` names; the SDK maps them to the `I
 | `customerName` | `string` | optional | Your customer display name. |
 | `environment` | `string` | optional | Overrides the constructor environment for this event. |
 | `metadata` | `Record<string, unknown>` | optional | JSON object containing request context; maximum serialized size is 8 KiB (8192 bytes). |
+| `responseId` | `string` | optional | The provider's response ID. Send it whenever you have it: if the same request also reaches LLMtrack from a gateway export, it's kept as one row and counted once. |
 | `idempotencyKey` | `string` | optional | SDK-only header option used to deduplicate this call; it is not an event-body field. |
 
 Token counts and `latencyMs` are validated client-side as non-negative integers. Metadata is validated client-side against the 8192-byte UTF-8 serialized limit.

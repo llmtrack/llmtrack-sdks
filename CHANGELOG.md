@@ -2,6 +2,10 @@
 
 All notable changes to the LLMtrack SDKs are documented in this file.
 
+## 0.3.0
+
+- Added optional `responseId` (`response_id` in Python). When the same request arrives from both the SDK and a gateway export, LLMtrack keeps one row.
+
 ## 0.2.0
 
 ### Node.js

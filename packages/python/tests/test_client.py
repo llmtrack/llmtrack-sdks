@@ -116,3 +116,39 @@ def test_openai_chat_completions_audio_adapter():
     assert from_openai_usage(usage) == {"prompt_tokens": 10, "completion_tokens": 6,
         "reasoning_tokens": 2, "output_audio_tokens": 5, "cached_input_tokens": 4,
         "input_audio_tokens": 3, "cache_accounting": "inclusive"}
+
+@pytest.mark.asyncio
+async def test_response_id_is_sent_under_wire_name(monkeypatch):
+    seen = {}
+    async def post(self, url, **kwargs):
+        seen.update(kwargs)
+        return httpx.Response(200, json={"ok": True, "duplicate": True})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1, completion_tokens=2,
+        response_id="chatcmpl-123")
+    assert seen["json"]["response_id"] == "chatcmpl-123"
+
+@pytest.mark.asyncio
+async def test_omitted_response_id_is_left_out_of_body(monkeypatch):
+    seen = {}
+    async def post(self, url, **kwargs):
+        seen.update(kwargs)
+        return httpx.Response(200, json={"ok": True, "duplicate": True})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    await LLMtrack(api_key="x").track_sync(provider="p", model="m", prompt_tokens=1, completion_tokens=2)
+    assert "response_id" not in seen["json"]
+
+def test_overlong_response_id_reports_invalid_payload_without_throwing(monkeypatch):
+    import threading
+    called = False
+    async def post(*args, **kwargs):
+        nonlocal called; called = True
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    errors, done = [], threading.Event()
+    def on_error(e):
+        errors.append(e); done.set()
+    LLMtrack(api_key="x", on_error=on_error).track(provider="p", model="m", prompt_tokens=1,
+        completion_tokens=2, response_id="a" * 257)
+    assert done.wait(5)
+    assert errors[0].code == "INVALID_PAYLOAD" and "response_id" in errors[0].message
+    assert not called

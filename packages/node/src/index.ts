@@ -37,6 +37,7 @@ export interface TrackOptions {
   cacheAccounting?: 'inclusive' | 'exclusive';
   feature?: string; customerId?: string; customerName?: string; metadata?: Record<string, unknown>;
   latencyMs?: number | null; status?: 'success'|'error'|'timeout'|'cancelled'; environment?: string; idempotencyKey?: string;
+  responseId?: string;
 }
 export interface LLMtrackOptions {
   apiKey: string; baseUrl?: string; environment?: string; onError?: (error: LLMtrackError)=>void;
@@ -67,7 +68,8 @@ export class LLMtrack {
       inputAudioTokens:input.inputAudioTokens, outputAudioTokens:input.outputAudioTokens,
       cacheAccounting:input.cacheAccounting,
       feature:input.feature, customerId:input.customerId, customerName:input.customerName,
-      metadata:input.metadata, latencyMs:input.latencyMs, status:input.status, environment:input.environment ?? this.environment};
+      metadata:input.metadata, latencyMs:input.latencyMs, status:input.status, environment:input.environment ?? this.environment,
+      responseId:input.responseId};
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v!==undefined)) as unknown as IngestRequest;
     const safe=Object.fromEntries(Object.entries(clean).filter(([k])=>k!=='metadata')) as Omit<IngestRequest,'metadata'>;
     if (!input.provider?.trim()) throw new LLMtrackError('INVALID_PAYLOAD','provider must be a non-empty string.',safe);
@@ -76,6 +78,8 @@ export class LLMtrack {
       if (value != null && (!Number.isInteger(value) || value < 0)) throw new LLMtrackError('INVALID_PAYLOAD',`${name} must be a non-negative integer.`,safe);
     if (input.cacheAccounting !== undefined && input.cacheAccounting !== 'inclusive' && input.cacheAccounting !== 'exclusive')
       throw new LLMtrackError('INVALID_PAYLOAD','cacheAccounting must be "inclusive" or "exclusive".',safe);
+    if (input.responseId !== undefined && (typeof input.responseId !== 'string' || !input.responseId.trim() || input.responseId.length > 256))
+      throw new LLMtrackError('INVALID_PAYLOAD','responseId must be a non-empty string of at most 256 characters.',safe);
     if (input.metadata !== undefined && new TextEncoder().encode(JSON.stringify(input.metadata)).length > 8192)
       throw new LLMtrackError('INVALID_PAYLOAD','metadata must serialize to at most 8192 bytes.',safe);
     return clean;
@@ -97,7 +101,7 @@ export class LLMtrack {
     throw new LLMtrackError('NETWORK_ERROR','Request failed after retries; check network connectivity and the LLMtrack URL.',this.withoutMetadata(payload),undefined,last);
   }
   private wirePayload(p: IngestRequest): Record<string, unknown> {
-    const names: Record<string,string>={promptTokens:'prompt_tokens',completionTokens:'completion_tokens',totalTokens:'total_tokens',reasoningTokens:'reasoning_tokens',cachedInputTokens:'cached_input_tokens',cacheWriteTokens:'cache_write_tokens',inputAudioTokens:'input_audio_tokens',outputAudioTokens:'output_audio_tokens',cacheAccounting:'cache_accounting',latencyMs:'latency_ms',customerId:'customer_id',customerName:'customer_name'};
+    const names: Record<string,string>={promptTokens:'prompt_tokens',completionTokens:'completion_tokens',totalTokens:'total_tokens',reasoningTokens:'reasoning_tokens',cachedInputTokens:'cached_input_tokens',cacheWriteTokens:'cache_write_tokens',inputAudioTokens:'input_audio_tokens',outputAudioTokens:'output_audio_tokens',cacheAccounting:'cache_accounting',latencyMs:'latency_ms',customerId:'customer_id',customerName:'customer_name',responseId:'response_id'};
     return Object.fromEntries(Object.entries(p).map(([key,value])=>[names[key]??key,value]));
   }
   private result(body:any):TrackResult {
